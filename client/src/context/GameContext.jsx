@@ -61,7 +61,7 @@ function gameReducer(state, action) {
         ...state,
         playerId:  action.payload.playerId,
         roomCode:  action.payload.roomCode,
-        joinUrl:   action.payload.joinUrl,
+        joinUrl:   `${window.location.origin}/#/join/${action.payload.roomCode}`,
         hostName:  action.payload.hostName,
         role:      ROLES.HOST,
         status:    GAME_STATES.WAITING_FOR_PLAYER,

@@ -59,7 +59,7 @@ function registerGameSocket(io, socket) {
 
       // Build the join URL using the configured client URL
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-      const joinUrl = `${clientUrl}/join/${roomCode}`;
+      const joinUrl = `${clientUrl}/#/join/${roomCode}`;
 
       // Respond to the host only
       socket.emit('gameCreated', {

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { GameProvider } from './context/GameContext';
 import { Suspense, lazy } from 'react';
 
@@ -21,9 +21,9 @@ function PageLoader() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       {/*
-        GameProvider MUST be inside BrowserRouter so it can call useNavigate().
+        GameProvider MUST be inside HashRouter so it can call useNavigate().
         It creates the Socket.IO connection and owns all game state.
       */}
       <GameProvider>
@@ -51,6 +51,6 @@ export default function App() {
           </Routes>
         </Suspense>
       </GameProvider>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
