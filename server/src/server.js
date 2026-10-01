@@ -23,7 +23,8 @@ const allowedOrigins = CLIENT_URL.split(',').map((o) => o.trim());
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    // If '*' is provided, reflect the incoming origin to allow credentials.
+    origin: allowedOrigins.includes('*') ? true : allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
