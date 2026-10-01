@@ -20,8 +20,8 @@ const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow server-to-server requests (no origin header) in development
-      if (!origin && process.env.NODE_ENV === 'development') {
+      // If client URL is explicitly set to '*' or request has no origin (Render health check)
+      if (!origin || allowedOrigins.includes('*')) {
         return callback(null, true);
       }
       if (allowedOrigins.includes(origin)) {
