@@ -22,15 +22,14 @@ const reconnectTimers = new Map();
  * @param {string} params.secretWord - Already validated and normalized
  * @returns {object} The in-memory room object
  */
-async function createRoom({ roomCode, hostPlayer, secretWord }) {
+async function createRoom({ roomCode, hostPlayer, secretWord, maxGuests = 5, timerMinutes = 5 }) {
   const roomData = {
     roomCode,
     status: GAME_STATES.WAITING_FOR_PLAYER,
+    settings: { maxGuests, timerMinutes },
     host: { ...hostPlayer },
-    guest: null,
+    guests: [],
     secretWord,
-    guesses: [],
-    currentAttempt: 0,
     winner: null,
     createdAt: Date.now(),
   };
@@ -39,14 +38,14 @@ async function createRoom({ roomCode, hostPlayer, secretWord }) {
   const game = new Game({
     roomCode,
     status: GAME_STATES.WAITING_FOR_PLAYER,
+    settings: { maxGuests, timerMinutes },
     host: {
       playerId: hostPlayer.playerId,
       name: hostPlayer.name,
       socketId: hostPlayer.socketId,
     },
     secretWord,
-    guesses: [],
-    currentAttempt: 0,
+    guests: [],
     winner: null,
   });
   await game.save();
@@ -76,22 +75,35 @@ function getRoom(roomCode) {
 async function joinRoom(roomCode, guestPlayer) {
   const room = rooms.get(roomCode);
   if (!room) throw new Error('Room not found');
-  if (room.status !== GAME_STATES.WAITING_FOR_PLAYER) throw new Error('Room is not joinable');
-  if (room.guest) throw new Error('Room is already full');
+  if (room.status !== GAME_STATES.WAITING_FOR_PLAYER && room.status !== GAME_STATES.READY_TO_START) throw new Error('Room is not joinable');
+  if (room.guests.length >= room.settings.maxGuests) throw new Error('Room is full');
 
-  room.guest = { ...guestPlayer };
-  room.status = GAME_STATES.READY_TO_START;
+  // Check if player is already in the room
+  if (room.guests.find((g) => g.playerId === guestPlayer.playerId)) {
+    return room;
+  }
+
+  const newGuest = {
+    playerId: guestPlayer.playerId,
+    name: guestPlayer.name,
+    socketId: guestPlayer.socketId,
+    guesses: [],
+    currentAttempt: 0,
+    hasWon: false,
+  };
+
+  room.guests.push(newGuest);
+  
+  if (room.guests.length > 0) {
+    room.status = GAME_STATES.READY_TO_START;
+  }
 
   // Sync to MongoDB
   await Game.findOneAndUpdate(
     { roomCode },
     {
-      guest: {
-        playerId: guestPlayer.playerId,
-        name: guestPlayer.name,
-        socketId: guestPlayer.socketId,
-      },
-      status: GAME_STATES.READY_TO_START,
+      $push: { guests: newGuest },
+      $set: { status: room.status },
     },
     { new: true }
   );
@@ -135,12 +147,15 @@ function roomExists(roomCode) {
 }
 
 /**
- * A room is joinable if it exists, has no guest, and status is WAITING_FOR_PLAYER.
+ * A room is joinable if it exists, has space, and is waiting/ready.
  */
 function isRoomJoinable(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return false;
-  return room.status === GAME_STATES.WAITING_FOR_PLAYER && !room.guest;
+  return (
+    (room.status === GAME_STATES.WAITING_FOR_PLAYER || room.status === GAME_STATES.READY_TO_START) &&
+    room.guests.length < room.settings.maxGuests
+  );
 }
 
 /* ─── Reconnection timers ────────────────────────────────────────── */

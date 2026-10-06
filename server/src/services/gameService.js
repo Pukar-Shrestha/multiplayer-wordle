@@ -18,7 +18,7 @@ const { generatePlayerId } = require('../utils/playerId');
  * @param {{ playerName, secretWord, socketId }} params
  * @returns {{ room, playerId, roomCode }}
  */
-async function createGame({ playerName, secretWord, socketId }) {
+async function createGame({ playerName, secretWord, socketId, maxGuests = 5, timerMinutes = 5 }) {
   // Validate and sanitize inputs
   const name = sanitizeName(playerName);
   if (!name) throw new Error('Player name is required');
@@ -33,7 +33,7 @@ async function createGame({ playerName, secretWord, socketId }) {
   const roomCode = await roomService.generateUniqueRoomCode();
   const hostPlayer = { playerId, name, socketId };
 
-  const room = await roomService.createRoom({ roomCode, hostPlayer, secretWord: word });
+  const room = await roomService.createRoom({ roomCode, hostPlayer, secretWord: word, maxGuests, timerMinutes });
 
   return { room, playerId, roomCode };
 }
@@ -56,7 +56,7 @@ async function joinGame({ roomCode, playerName, socketId, existingPlayerId = nul
     if (room && room.status === GAME_STATES.PLAYER_DISCONNECTED) {
       throw new Error('This game has ended due to a disconnection');
     }
-    if (room && room.guest) {
+    if (room && room.guests.length >= room.settings.maxGuests) {
       throw new Error('This game is already full');
     }
     throw new Error('This game has already started');
@@ -80,38 +80,31 @@ async function startGame({ roomCode, playerId }) {
   const room = roomService.getRoom(roomCode);
   if (!room) throw new Error('Room not found');
   if (room.host.playerId !== playerId) throw new Error('Only the host can start the game');
-  if (!room.guest) throw new Error('Waiting for another player to join');
+  if (room.guests.length === 0) throw new Error('Waiting for at least one player to join');
   if (room.status !== GAME_STATES.READY_TO_START) {
     throw new Error('Game cannot be started in its current state');
   }
 
-  await roomService.updateRoom(roomCode, { status: GAME_STATES.IN_PROGRESS });
+  const now = Date.now();
+  await roomService.updateRoom(roomCode, { status: GAME_STATES.IN_PROGRESS, startedAt: now });
   return roomService.getRoom(roomCode);
 }
 
 /* ─── Guess processing ───────────────────────────────────────────── */
 
-/**
- * Validate and score a guess from the guest player.
- * The server is authoritative — all validation happens here.
- *
- * @param {{ roomCode, playerId, guess }} params
- * @returns {{
- *   guess: string,
- *   result: string[],
- *   attempt: number,
- *   isWin: boolean,
- *   isGameOver: boolean,
- *   status: string,
- *   secretWord?: string  // Only present when game ends
- * }}
- */
 async function processGuess({ roomCode, playerId, guess }) {
   const room = roomService.getRoom(roomCode);
   if (!room) throw new Error('Room not found');
   if (room.status !== GAME_STATES.IN_PROGRESS) throw new Error('Game is not currently in progress');
-  if (!room.guest || room.guest.playerId !== playerId) {
-    throw new Error('Only the guest player can submit guesses');
+  
+  const guestIndex = room.guests.findIndex(g => g.playerId === playerId);
+  if (guestIndex === -1) {
+    throw new Error('Only a valid guest player can submit guesses');
+  }
+  
+  const guest = room.guests[guestIndex];
+  if (guest.hasWon || guest.currentAttempt >= MAX_ATTEMPTS) {
+    throw new Error('This player cannot submit more guesses');
   }
 
   const normalizedGuess = sanitizeWord(guess);
@@ -121,26 +114,39 @@ async function processGuess({ roomCode, playerId, guess }) {
   // Server-authoritative scoring
   const result = wordService.scoreGuess(normalizedGuess, room.secretWord);
   const isWin = wordService.isWinningResult(result);
-  const newAttempt = room.currentAttempt + 1;
-  const isGameOver = !isWin && newAttempt >= MAX_ATTEMPTS;
+  const newAttempt = guest.currentAttempt + 1;
+  const isPlayerGameOver = !isWin && newAttempt >= MAX_ATTEMPTS;
 
   const guessEntry = { word: normalizedGuess, result, attempt: newAttempt };
 
-  // Determine new state
+  // Update guest state
+  const updatedGuests = [...room.guests];
+  updatedGuests[guestIndex] = {
+    ...guest,
+    guesses: [...guest.guesses, guessEntry],
+    currentAttempt: newAttempt,
+    hasWon: isWin
+  };
+
+  // Check overall game status
   let newStatus = GAME_STATES.IN_PROGRESS;
   let winner = null;
+  
   if (isWin) {
     newStatus = GAME_STATES.GUEST_WON;
-    winner = ROLES.GUEST;
-  } else if (isGameOver) {
-    newStatus = GAME_STATES.GAME_OVER;
+    winner = playerId; // Winner is the first player who guessed correctly
+  } else {
+    // Check if everyone is out of attempts
+    const allFinished = updatedGuests.every(g => g.hasWon || g.currentAttempt >= MAX_ATTEMPTS);
+    if (allFinished) {
+      newStatus = GAME_STATES.GAME_OVER;
+    }
   }
 
   await roomService.updateRoom(roomCode, {
-    guesses: [...room.guesses, guessEntry],
-    currentAttempt: newAttempt,
+    guests: updatedGuests,
     status: newStatus,
-    winner,
+    winner: winner || room.winner,
   });
 
   return {
@@ -148,22 +154,17 @@ async function processGuess({ roomCode, playerId, guess }) {
     result,
     attempt: newAttempt,
     isWin,
-    isGameOver,
+    isGameOver: newStatus === GAME_STATES.GAME_OVER,
     status: newStatus,
+    winner,
+    guestName: guest.name,
     // Reveal the secret word only when the game ends
-    secretWord: isWin || isGameOver ? room.secretWord : undefined,
+    secretWord: isWin || newStatus === GAME_STATES.GAME_OVER ? room.secretWord : undefined,
   };
 }
 
 /* ─── Disconnect / Reconnect ─────────────────────────────────────── */
 
-/**
- * Handle a player disconnecting.
- * Starts a grace-period timer; if they don't reconnect in time,
- * marks the game as PLAYER_DISCONNECTED and notifies the remaining player.
- *
- * @param {{ roomCode, playerId, role, io }} params
- */
 function handleDisconnect({ roomCode, playerId, role, io }) {
   const room = roomService.getRoom(roomCode);
   if (!room) return;
@@ -176,11 +177,19 @@ function handleDisconnect({ roomCode, playerId, role, io }) {
 
   if (!activeStates.includes(room.status)) return;
 
-  const playerName = role === ROLES.GUEST ? room.guest?.name : room.host?.name;
+  let playerName;
+  if (role === ROLES.HOST) {
+    playerName = room.host.name;
+  } else {
+    const guest = room.guests.find(g => g.playerId === playerId);
+    if (!guest) return;
+    playerName = guest.name;
+  }
 
   // Broadcast temporary disconnection notice
   io.to(roomCode).emit('playerDisconnected', {
     role,
+    playerId,
     playerName,
     permanent: false,
     message: `${playerName} disconnected. Waiting for them to reconnect...`,
@@ -189,35 +198,40 @@ function handleDisconnect({ roomCode, playerId, role, io }) {
   // Start grace-period timer
   roomService.setReconnectTimer(
     roomCode,
-    role,
+    role === ROLES.HOST ? 'host' : `guest:${playerId}`,
     async () => {
       const currentRoom = roomService.getRoom(roomCode);
       if (!currentRoom) return;
 
-      // Permanent disconnect — end the game
-      await roomService.updateRoom(roomCode, {
-        status: GAME_STATES.PLAYER_DISCONNECTED,
-      });
-
-      io.to(roomCode).emit('playerLeft', {
-        role,
-        playerName,
-        permanent: true,
-        secretWord: currentRoom.secretWord, // Reveal word on permanent disconnect
-        message: `${playerName} left the game. Game over.`,
-      });
+      if (role === ROLES.HOST) {
+        // If host leaves, end game completely
+        await roomService.updateRoom(roomCode, {
+          status: GAME_STATES.PLAYER_DISCONNECTED,
+        });
+        io.to(roomCode).emit('playerLeft', {
+          role,
+          playerId,
+          playerName,
+          permanent: true,
+          secretWord: currentRoom.secretWord,
+          message: `${playerName} left the game. Game over.`,
+        });
+      } else {
+        // If a guest leaves, just mark them disconnected or remove them depending on state
+        // For now, we broadcast they left permanently
+        io.to(roomCode).emit('playerLeft', {
+          role,
+          playerId,
+          playerName,
+          permanent: true,
+          message: `${playerName} abandoned the match.`,
+        });
+      }
     },
     RECONNECT_TIMEOUT_MS
   );
 }
 
-/**
- * Handle a player reconnecting to an existing room.
- * Cancels their disconnect timer and restores their socket to the room.
- *
- * @param {{ roomCode, playerId, socketId, socket }} params
- * @returns {{ room, role }}
- */
 async function handleReconnect({ roomCode, playerId, socketId }) {
   const room = roomService.getRoom(roomCode);
   if (!room) throw new Error('Room no longer exists — it may have expired');
@@ -227,15 +241,18 @@ async function handleReconnect({ roomCode, playerId, socketId }) {
   if (room.host.playerId === playerId) {
     role = ROLES.HOST;
     room.host.socketId = socketId;
-  } else if (room.guest && room.guest.playerId === playerId) {
-    role = ROLES.GUEST;
-    room.guest.socketId = socketId;
+    roomService.clearReconnectTimer(`${roomCode}:host`);
   } else {
-    throw new Error('Player not found in this room');
+    const guest = room.guests.find(g => g.playerId === playerId);
+    if (guest) {
+      role = ROLES.GUEST;
+      guest.socketId = socketId;
+      roomService.clearReconnectTimer(`${roomCode}:guest:${playerId}`);
+      await roomService.updateRoom(roomCode, { guests: room.guests });
+    } else {
+      throw new Error('Player not found in this room');
+    }
   }
-
-  // Cancel disconnect timeout since they reconnected
-  roomService.clearReconnectTimer(`${roomCode}:${role}`);
 
   return { room, role };
 }
@@ -251,29 +268,28 @@ const GAME_OVER_STATES = [
 /**
  * Build a safe room state payload for the GUEST.
  * The secretWord is NEVER included.
- *
- * @param {object} room - In-memory room object
- * @returns {object} Safe guest payload
  */
 function getRoomStateForGuest(room) {
   return {
     roomCode: room.roomCode,
     status: room.status,
+    settings: room.settings,
+    startedAt: room.startedAt,
     host: { name: room.host.name },
-    guest: room.guest ? { name: room.guest.name } : null,
-    guesses: room.guesses,
-    currentAttempt: room.currentAttempt,
+    guests: room.guests.map(g => ({
+      playerId: g.playerId,
+      name: g.name,
+      guesses: g.guesses,
+      currentAttempt: g.currentAttempt,
+      hasWon: g.hasWon
+    })),
     winner: room.winner,
-    // ⛔ secretWord intentionally omitted
   };
 }
 
 /**
  * Build a safe room state payload for the HOST.
  * Reveals secretWord only after the game has ended.
- *
- * @param {object} room - In-memory room object
- * @returns {object} Safe host payload
  */
 function getRoomStateForHost(room) {
   const state = getRoomStateForGuest(room);

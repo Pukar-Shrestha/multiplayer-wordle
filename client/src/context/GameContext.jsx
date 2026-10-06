@@ -30,18 +30,22 @@ const initialState = {
 
   // Players
   hostName:  '',
-  guestName: '',
+  guests:    [], // Array of guest state objects
+  settings:  { maxGuests: 5, timerMinutes: 5 },
 
   // Game board
-  guesses:       [],   // Completed guesses: [{ word, result[], attempt }]
-  hostGuessView: [],   // Host-side view: [{ result[], attempt }] — NO words
+  guesses:       [],   // Guest's own completed guesses
+  hostGuessView: [],   // Host's view of all guesses: [{ playerId, guestName, result, guess, attempt }]
   currentAttempt: 0,
   maxAttempts:    MAX_ATTEMPTS,
   currentGuess:  '',   // Guest's in-progress word (not yet submitted)
 
   // Outcome
   winner:     null,
+  winnerName: null,
   secretWord: null,    // Only populated after game ends
+  startedAt:  null,
+  nextMatch:  null,    // { newRoomCode, hostName } for host rotation
 
   // UI state
   error:     null,
@@ -63,11 +67,12 @@ function gameReducer(state, action) {
         roomCode:  action.payload.roomCode,
         joinUrl:   `${window.location.origin}/#/join/${action.payload.roomCode}`,
         hostName:  action.payload.hostName,
+        settings:  action.payload.settings || { maxGuests: 5, timerMinutes: 5 },
+        guests:    [],
         role:      ROLES.HOST,
         status:    GAME_STATES.WAITING_FOR_PLAYER,
         isLoading: false,
         error:     null,
-        // Reset board from any previous game
         guesses: [], hostGuessView: [], currentAttempt: 0,
         currentGuess: '', winner: null, secretWord: null,
       };
@@ -78,9 +83,10 @@ function gameReducer(state, action) {
         playerId:  action.payload.playerId,
         roomCode:  action.payload.roomCode,
         hostName:  action.payload.hostName,
-        guestName: action.payload.guestName,
+        guests:    action.payload.guests || [],
+        settings:  action.payload.settings || { maxGuests: 5, timerMinutes: 5 },
         role:      ROLES.GUEST,
-        status:    GAME_STATES.PLAYER_JOINED,
+        status:    action.payload.status,
         isLoading: false,
         error:     null,
         guesses: [], hostGuessView: [], currentAttempt: 0,
@@ -90,17 +96,18 @@ function gameReducer(state, action) {
     case 'PLAYER_JOINED':
       return {
         ...state,
-        guestName: action.payload.guestName,
-        status:    GAME_STATES.READY_TO_START,
+        guests:    action.payload.guests || [],
+        status:    action.payload.status,
       };
 
     case 'GAME_STARTED':
       return {
         ...state,
         status:      GAME_STATES.IN_PROGRESS,
+        startedAt:   action.payload.startedAt,
         maxAttempts: action.payload.maxAttempts || MAX_ATTEMPTS,
         hostName:    action.payload.hostName || state.hostName,
-        guestName:   action.payload.guestName || state.guestName,
+        guests:      action.payload.guests || state.guests,
         guesses:     [],
         hostGuessView: [],
         currentAttempt: 0,
@@ -127,9 +134,14 @@ function gameReducer(state, action) {
         ...state,
         hostGuessView: [
           ...state.hostGuessView,
-          { result: action.payload.result, attempt: action.payload.attempt },
+          { 
+            playerId: action.payload.playerId, 
+            guestName: action.payload.guestName, 
+            result: action.payload.result, 
+            guess: action.payload.guess, 
+            attempt: action.payload.attempt 
+          },
         ],
-        currentAttempt: action.payload.attempt,
         status:         action.payload.status,
         secretWord:     action.payload.secretWord ?? state.secretWord,
       };
@@ -139,6 +151,7 @@ function gameReducer(state, action) {
         ...state,
         status:     GAME_STATES.GUEST_WON,
         winner:     action.payload.winner,
+        winnerName: action.payload.guestName,
         secretWord: action.payload.secretWord,
         currentGuess: '',
       };
@@ -165,13 +178,43 @@ function gameReducer(state, action) {
         toast:      { message: action.payload.message, type: 'error' },
       };
 
-    case 'RECONNECTED':
+    case 'RECONNECTED': {
+      const roomState = action.payload.roomState;
+      const role = action.payload.role;
+      const reconnectedPlayerId = action.payload.playerId;
+      
+      let newGuesses = [];
+      let newHostGuessView = [];
+
+      if (role === ROLES.GUEST) {
+        // Find our own guesses
+        const me = roomState.guests?.find(g => g.playerId === reconnectedPlayerId);
+        if (me) newGuesses = me.guesses || [];
+      } else {
+        // Host needs to flatten all guests' guesses into hostGuessView
+        roomState.guests?.forEach(g => {
+          (g.guesses || []).forEach(guess => {
+            newHostGuessView.push({
+              playerId: g.playerId,
+              guestName: g.name,
+              result: guess.result,
+              guess: guess.word,
+              attempt: guess.attempt
+            });
+          });
+        });
+      }
+
       return {
         ...state,
-        ...action.payload.roomState,
-        role:  action.payload.role,
+        ...roomState,
+        playerId: reconnectedPlayerId,
+        role,
+        guesses: newGuesses,
+        hostGuessView: newHostGuessView,
         toast: { message: 'Reconnected!', type: 'success' },
       };
+    }
 
     case 'PLAYER_RECONNECTED':
       return {
@@ -197,6 +240,13 @@ function gameReducer(state, action) {
 
     case 'RESET_GAME':
       return { ...initialState, connectionStatus: state.connectionStatus };
+
+    case 'NEXT_MATCH_READY':
+      return {
+        ...state,
+        nextMatch: action.payload,
+        toast: { message: `${action.payload.hostName} is hosting the next match!`, type: 'info' }
+      };
 
     default:
       return state;
@@ -336,6 +386,11 @@ export function GameProvider({ children }) {
       setTimeout(() => navigate('/game-over'), 2000);
     });
 
+    // Phase 4: Host rotation next match broadcast
+    socket.on('nextMatchReady', (data) => {
+      dispatch({ type: 'NEXT_MATCH_READY', payload: data });
+    });
+
     // This socket reconnected to an existing room
     socket.on('reconnected', (data) => {
       dispatch({ type: 'RECONNECTED', payload: data });
@@ -386,14 +441,14 @@ export function GameProvider({ children }) {
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
-  const createGame = useCallback(({ playerName, secretWord }) => {
+  const createGame = useCallback(({ playerName, secretWord, maxGuests, timerMinutes, oldRoomCode }) => {
     if (!socketRef.current?.connected) {
       dispatch({ type: 'SET_ERROR', payload: 'Not connected to server. Please refresh the page.' });
       return;
     }
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'CLEAR_ERROR' });
-    socketRef.current.emit('createGame', { playerName, secretWord });
+    socketRef.current.emit('createGame', { playerName, secretWord, maxGuests, timerMinutes, oldRoomCode });
   }, []);
 
   const joinGame = useCallback(({ roomCode, playerName }) => {

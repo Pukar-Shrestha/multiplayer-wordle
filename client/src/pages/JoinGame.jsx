@@ -8,7 +8,7 @@ export default function JoinGame() {
   const { roomCode: urlCode } = useParams();
   const { joinGame, isLoading, error, clearError, setToast } = useGame();
   
-  const [name, setName] = useState('');
+  const [name, setName] = useState(localStorage.getItem('wPlayerName') || '');
   const [code, setCode] = useState(urlCode || '');
   const [isChecking, setIsChecking] = useState(false);
 
@@ -18,6 +18,7 @@ export default function JoinGame() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    localStorage.setItem('wPlayerName', name);
     const formattedCode = code.trim().toUpperCase();
     
     // Fast pre-flight check before opening Socket.IO connection

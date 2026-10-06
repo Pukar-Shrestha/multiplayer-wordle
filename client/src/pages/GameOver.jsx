@@ -4,7 +4,7 @@ import { GAME_STATES, ROLES } from '../utils/constants';
 
 export default function GameOver() {
   const navigate = useNavigate();
-  const { status, role, secretWord, guestName, hostName, currentAttempt, resetGame } = useGame();
+  const { status, role, secretWord, winnerName, hostName, currentAttempt, roomCode, nextMatch, resetGame } = useGame();
 
   const isHost = role === ROLES.HOST;
   const isGuestWin = status === GAME_STATES.GUEST_WON;
@@ -18,19 +18,24 @@ export default function GameOver() {
     subtext = 'The other player disconnected.';
   } else if (isHost) {
     if (isGuestWin) {
-      heading = 'They Got It!';
-      subtext = `${guestName} guessed your word in ${currentAttempt} attempts.`;
+      heading = `${winnerName} Won!`;
+      subtext = `${winnerName} guessed your word first.`;
     } else {
       heading = 'You Win!';
-      subtext = `${guestName} failed to guess your word.`;
+      subtext = 'None of the guests could guess your word in time.';
     }
   } else {
     if (isGuestWin) {
-      heading = 'You Got It!';
-      subtext = `You guessed ${hostName}'s word in ${currentAttempt} attempts.`;
+      if (winnerName) {
+        heading = `${winnerName} Won!`;
+        subtext = `${winnerName} guessed ${hostName}'s word first.`;
+      } else {
+        heading = 'You Got It!';
+        subtext = `You guessed ${hostName}'s word!`;
+      }
     } else {
       heading = 'Game Over';
-      subtext = `You ran out of attempts!`;
+      subtext = 'Nobody figured out the word.';
     }
   }
 
@@ -49,9 +54,43 @@ export default function GameOver() {
           </div>
         )}
         
-        <button className="btn-primary w-full mt-4 py-4" onClick={resetGame}>
-          Back to Home
-        </button>
+        {nextMatch ? (
+          <div className="my-6 p-4 bg-wordle-green/20 border border-wordle-green rounded-lg animate-pulse">
+            <p className="text-wordle-green font-bold mb-4">
+              {nextMatch.hostName} is hosting the next match!
+            </p>
+            <button 
+              className="btn-primary w-full py-3"
+              onClick={() => {
+                resetGame();
+                navigate(`/join/${nextMatch.newRoomCode}`);
+              }}
+            >
+              Join Next Match
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4 mt-6">
+            <button 
+              className="btn-primary w-full py-4"
+              onClick={() => {
+                navigate('/create', { state: { oldRoomCode: roomCode } });
+              }}
+            >
+              Host Next Match
+            </button>
+            
+            <button 
+              className="btn-secondary w-full py-4"
+              onClick={() => {
+                resetGame();
+                navigate('/');
+              }}
+            >
+              Back to Home
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

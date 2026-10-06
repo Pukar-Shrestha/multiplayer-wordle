@@ -1,17 +1,27 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 
 export default function CreateGame() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { createGame, isLoading, error, clearError } = useGame();
   
-  const [name, setName] = useState('');
+  const [name, setName] = useState(localStorage.getItem('wPlayerName') || '');
   const [word, setWord] = useState('');
+  const [maxGuests, setMaxGuests] = useState(5);
+  const [timerMinutes, setTimerMinutes] = useState(5);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    createGame({ playerName: name, secretWord: word });
+    localStorage.setItem('wPlayerName', name);
+    createGame({ 
+      playerName: name, 
+      secretWord: word, 
+      maxGuests: Number(maxGuests), 
+      timerMinutes: Number(timerMinutes),
+      oldRoomCode: location.state?.oldRoomCode
+    });
   };
 
   return (
@@ -50,9 +60,36 @@ export default function CreateGame() {
             minLength={5} 
             required 
           />
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-gray-500 mt-2 mb-4">
             The word must be a valid English 5-letter word.
           </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Max Players</label>
+            <select 
+              className="game-input bg-wordle-dark text-white cursor-pointer"
+              value={maxGuests}
+              onChange={(e) => setMaxGuests(e.target.value)}
+            >
+              {[1, 2, 3, 4, 5].map(num => (
+                <option key={num} value={num}>{num} {num === 1 ? 'Guest' : 'Guests'}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Timer</label>
+            <select 
+              className="game-input bg-wordle-dark text-white cursor-pointer"
+              value={timerMinutes}
+              onChange={(e) => setTimerMinutes(e.target.value)}
+            >
+              {[1, 2, 3, 4, 5].map(num => (
+                <option key={num} value={num}>{num} {num === 1 ? 'Minute' : 'Minutes'}</option>
+              ))}
+            </select>
+          </div>
         </div>
         
         <div className="pt-2 flex gap-4">

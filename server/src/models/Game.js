@@ -24,6 +24,18 @@ const guessSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const guestStateSchema = new mongoose.Schema(
+  {
+    playerId: { type: String, required: true },
+    name: { type: String, required: true, trim: true, maxlength: 20 },
+    socketId: { type: String, default: null },
+    guesses: { type: [guessSchema], default: [] },
+    currentAttempt: { type: Number, default: 0 },
+    hasWon: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 /* ─── Main schema ─────────────────────────────────────────────────── */
 
 const gameSchema = new mongoose.Schema(
@@ -42,13 +54,16 @@ const gameSchema = new mongoose.Schema(
       default: GAME_STATES.WAITING_FOR_PLAYER,
       required: true,
     },
+    settings: {
+      maxPlayers: { type: Number, default: 5 }, // 1 to 5 guests
+      timerMinutes: { type: Number, default: 5 }, // 1 to 5 minutes
+    },
     host: { type: playerSchema, required: true },
-    guest: { type: playerSchema, default: null },
-
+    guests: { type: [guestStateSchema], default: [] },
+    
     /**
      * SECURITY: secretWord uses `select: false` so it is NEVER returned
      * in a standard Mongoose query unless explicitly requested with `.select('+secretWord')`.
-     * Always use toGuestDTO() / toHostDTO() to build socket payloads.
      */
     secretWord: {
       type: String,
@@ -56,25 +71,23 @@ const gameSchema = new mongoose.Schema(
       lowercase: true,
       select: false,
     },
-
-    guesses: { type: [guessSchema], default: [] },
-    currentAttempt: { type: Number, default: 0 },
+    
     winner: {
-      type: String,
-      enum: ['host', 'guest', null],
+      type: String, // playerId of winner, or null if no winner, or 'host' if time up
+      default: null,
+    },
+    startedAt: {
+      type: Number,
       default: null,
     },
   },
   {
-    timestamps: true, // adds createdAt, updatedAt
+    timestamps: true,
   }
 );
 
 /* ─── Indexes ─────────────────────────────────────────────────────── */
 
-// TTL index: MongoDB automatically removes documents after ROOM_EXPIRATION_MINUTES.
-// The application-level cleanup in roomService runs first; this is a safety net.
-// Default: 3600 seconds (1 hour). Adjust via ROOM_EXPIRATION_MINUTES env var at startup.
 gameSchema.index(
   { createdAt: 1 },
   { expireAfterSeconds: parseInt(process.env.ROOM_EXPIRATION_MINUTES || '60', 10) * 60 }
@@ -90,12 +103,16 @@ gameSchema.methods.toGuestDTO = function () {
   return {
     roomCode: this.roomCode,
     status: this.status,
+    settings: this.settings,
     host: { name: this.host.name },
-    guest: this.guest ? { name: this.guest.name } : null,
-    guesses: this.guesses,
-    currentAttempt: this.currentAttempt,
+    guests: this.guests.map(g => ({
+      playerId: g.playerId,
+      name: g.name,
+      guesses: g.guesses,
+      currentAttempt: g.currentAttempt,
+      hasWon: g.hasWon
+    })),
     winner: this.winner,
-    // ⛔ secretWord is intentionally omitted
   };
 };
 

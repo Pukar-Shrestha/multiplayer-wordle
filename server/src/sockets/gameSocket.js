@@ -33,12 +33,11 @@ function registerGameSocket(io, socket) {
    * ──────────────────────────────────────────────────────────────────────── */
   socket.on('createGame', async (data) => {
     try {
-      // Input validation
       if (!data || typeof data !== 'object') {
         return emitError(socket, 'INVALID_PAYLOAD', 'Invalid request payload');
       }
 
-      const { playerName, secretWord } = data;
+      const { playerName, secretWord, maxGuests, timerMinutes, oldRoomCode } = data;
 
       if (!isValidString(playerName, 20)) {
         return emitError(socket, 'INVALID_NAME', 'Please enter a valid name (max 20 characters)');
@@ -47,28 +46,35 @@ function registerGameSocket(io, socket) {
         return emitError(socket, 'INVALID_WORD', 'Please enter a secret word');
       }
 
-      // Delegate to game service (validates word against dictionary server-side)
       const { room, playerId, roomCode } = await gameService.createGame({
         playerName,
         secretWord,
         socketId: socket.id,
+        maxGuests: maxGuests || 5,
+        timerMinutes: timerMinutes || 5,
       });
 
-      // Join the Socket.IO room
       socket.join(roomCode);
 
-      // Build the join URL using the configured client URL
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
       const joinUrl = `${clientUrl}/#/join/${roomCode}`;
 
-      // Respond to the host only
       socket.emit('gameCreated', {
         roomCode,
         playerId,
         joinUrl,
         hostName: sanitizeName(playerName),
         status: room.status,
+        settings: room.settings
       });
+
+      // Phase 4: Host Rotation — Notify old room if this is a follow-up match
+      if (oldRoomCode && isValidRoomCode(oldRoomCode)) {
+        socket.to(oldRoomCode).emit('nextMatchReady', {
+          newRoomCode: roomCode,
+          hostName: sanitizeName(playerName)
+        });
+      }
 
       console.log(`🎮 Game created: ${roomCode} by ${sanitizeName(playerName)}`);
     } catch (err) {
@@ -77,13 +83,6 @@ function registerGameSocket(io, socket) {
     }
   });
 
-  /* ────────────────────────────────────────────────────────────────────────
-   * EVENT: joinGame
-   * Emitted by: Guest
-   * Payload:    { roomCode: string, playerName: string, playerId?: string }
-   *
-   * The guest's browser NEVER receives secretWord at any point here.
-   * ──────────────────────────────────────────────────────────────────────── */
   socket.on('joinGame', async (data) => {
     try {
       if (!data || typeof data !== 'object') {
@@ -93,17 +92,13 @@ function registerGameSocket(io, socket) {
       const { playerName, playerId: existingPlayerId } = data;
       const roomCode = sanitizeRoomCode(data.roomCode);
 
-      // Validate room code format
       if (!isValidRoomCode(roomCode)) {
         return emitError(socket, 'INVALID_CODE', 'Invalid room code format');
       }
-
-      // Validate player name
       if (!isValidString(playerName, 20)) {
         return emitError(socket, 'INVALID_NAME', 'Please enter a valid name (max 20 characters)');
       }
 
-      // Attempt to join (throws descriptive errors for all failure modes)
       const { room, playerId } = await gameService.joinGame({
         roomCode,
         playerName,
@@ -111,23 +106,23 @@ function registerGameSocket(io, socket) {
         existingPlayerId: existingPlayerId || null,
       });
 
-      // Add this socket to the Socket.IO room
       socket.join(roomCode);
 
-      // Notify the host that a guest has joined
       socket.to(roomCode).emit('playerJoined', {
         guestName: sanitizeName(playerName),
         playerId,
         status: room.status,
+        guests: room.guests
       });
 
-      // Confirm to the guest — safe DTO only (no secretWord)
       socket.emit('gameJoined', {
         roomCode,
         playerId,
         hostName: room.host.name,
         guestName: sanitizeName(playerName),
         status: room.status,
+        guests: room.guests,
+        settings: room.settings
       });
 
       console.log(`👤 ${sanitizeName(playerName)} joined room ${roomCode}`);
@@ -137,11 +132,6 @@ function registerGameSocket(io, socket) {
     }
   });
 
-  /* ────────────────────────────────────────────────────────────────────────
-   * EVENT: startGame
-   * Emitted by: Host only
-   * Payload:    { roomCode: string, playerId: string }
-   * ──────────────────────────────────────────────────────────────────────── */
   socket.on('startGame', async (data) => {
     try {
       if (!data || typeof data !== 'object') {
@@ -160,16 +150,14 @@ function registerGameSocket(io, socket) {
 
       const room = await gameService.startGame({ roomCode, playerId });
 
-      // Notify BOTH players — game is starting
-      // MAX_ATTEMPTS is baked into the payload so the client doesn't hardcode it
       const { MAX_ATTEMPTS } = require('../config/constants');
 
       io.to(roomCode).emit('gameStarted', {
         status: room.status,
+        startedAt: room.startedAt,
         maxAttempts: MAX_ATTEMPTS,
         hostName: room.host.name,
-        guestName: room.guest.name,
-        // ⛔ secretWord is NEVER included here
+        guests: room.guests,
       });
 
       console.log(`▶️  Game started: ${roomCode}`);
@@ -179,19 +167,6 @@ function registerGameSocket(io, socket) {
     }
   });
 
-  /* ────────────────────────────────────────────────────────────────────────
-   * EVENT: submitGuess
-   * Emitted by: Guest only
-   * Payload:    { roomCode: string, playerId: string, guess: string }
-   *
-   * The server is fully authoritative:
-   *   - validates room, player, state, length, dictionary
-   *   - calculates Wordle result
-   *   - decides win/lose
-   *   - broadcasts outcome
-   *
-   * The host receives guess progress but NEVER the secret word until game ends.
-   * ──────────────────────────────────────────────────────────────────────── */
   socket.on('submitGuess', async (data) => {
     try {
       if (!data || typeof data !== 'object') {
@@ -201,31 +176,23 @@ function registerGameSocket(io, socket) {
       const roomCode = sanitizeRoomCode(data.roomCode);
       const { playerId, guess } = data;
 
-      // Validate room code
       if (!isValidRoomCode(roomCode)) {
         return emitError(socket, 'INVALID_CODE', 'Invalid room code');
       }
-
-      // Validate player ID
       if (!isValidString(playerId, 50)) {
         return emitError(socket, 'INVALID_PLAYER', 'Invalid player ID');
       }
-
-      // Validate guess input
       const normalizedGuess = sanitizeWord(guess);
       if (!normalizedGuess) {
         return emitError(socket, 'INVALID_GUESS', 'Please enter a word to guess');
       }
 
-      // ── Rate limiting ──────────────────────────────────────────────────────
       if (!checkGuessRateLimit(guessTimestamps, socket.id, GUESS_WINDOW_MS, GUESS_MAX)) {
         return emitError(socket, 'RATE_LIMITED', 'You are guessing too fast. Please slow down.');
       }
 
-      // ── Server-authoritative processing ───────────────────────────────────
       const result = await gameService.processGuess({ roomCode, playerId, guess: normalizedGuess });
 
-      // Send detailed result to the guest (includes secretWord only if game ends)
       socket.emit('guessResult', {
         guess: result.guess,
         result: result.result,
@@ -233,41 +200,36 @@ function registerGameSocket(io, socket) {
         status: result.status,
         isWin: result.isWin,
         isGameOver: result.isGameOver,
-        secretWord: result.secretWord, // undefined mid-game, revealed on end
+        secretWord: result.secretWord,
       });
 
-      // Send progress-only update to the host (NO secret word while game is live)
-      const room = roomService.getRoom(roomCode);
       const hostPayload = {
+        playerId,
+        guestName: result.guestName,
         attempt: result.attempt,
-        result: result.result, // tile colors only — word not included
+        result: result.result,
+        guess: result.guess, // Included as requested so host sees the actual word
         status: result.status,
-        guestName: room?.guest?.name,
       };
 
-      // Only reveal the secret word to the host when game ends
       if (result.isWin || result.isGameOver) {
         hostPayload.secretWord = result.secretWord;
-        hostPayload.guestName = room?.guest?.name;
       }
 
       socket.to(roomCode).emit('guessUpdate', hostPayload);
 
-      // ── Terminal game events ───────────────────────────────────────────────
       if (result.isWin) {
         io.to(roomCode).emit('gameWon', {
-          winner: ROLES.GUEST,
-          guestName: room?.guest?.name,
-          hostName: room?.host?.name,
+          winner: playerId,
+          guestName: result.guestName,
           secretWord: result.secretWord,
           attempts: result.attempt,
           status: result.status,
         });
-        console.log(`🏆 ${room?.guest?.name} won room ${roomCode} in ${result.attempt} attempt(s)`);
+        console.log(`🏆 ${result.guestName} won room ${roomCode} in ${result.attempt} attempt(s)`);
       } else if (result.isGameOver) {
         io.to(roomCode).emit('gameLost', {
-          guestName: room?.guest?.name,
-          hostName: room?.host?.name,
+          guestName: result.guestName,
           secretWord: result.secretWord,
           attempts: result.attempt,
           status: result.status,
@@ -318,6 +280,7 @@ function registerGameSocket(io, socket) {
 
       socket.emit('reconnected', {
         role,
+        playerId,
         roomState: statePayload,
       });
 
