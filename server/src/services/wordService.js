@@ -83,4 +83,15 @@ function isWinningResult(result) {
   return result.every((r) => r === TILE_COLORS.GREEN);
 }
 
-module.exports = { isValidWord, scoreGuess, isWinningResult, wordSet };
+/**
+ * Returns a random valid word from the word list.
+ *
+ * @returns {string}
+ */
+function getRandomWord() {
+  const wordsArray = Array.from(wordSet);
+  const randomIndex = Math.floor(Math.random() * wordsArray.length);
+  return wordsArray[randomIndex];
+}
+
+module.exports = { isValidWord, scoreGuess, isWinningResult, getRandomWord, wordSet };

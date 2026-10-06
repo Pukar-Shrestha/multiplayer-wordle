@@ -9,6 +9,7 @@ export default function CreateGame() {
   
   const [name, setName] = useState(localStorage.getItem('wPlayerName') || '');
   const [word, setWord] = useState('');
+  const [isRandomWord, setIsRandomWord] = useState(false);
   const [maxGuests, setMaxGuests] = useState(5);
   const [timerMinutes, setTimerMinutes] = useState(5);
 
@@ -17,10 +18,11 @@ export default function CreateGame() {
     localStorage.setItem('wPlayerName', name);
     createGame({ 
       playerName: name, 
-      secretWord: word, 
+      secretWord: isRandomWord ? '' : word, 
       maxGuests: Number(maxGuests), 
       timerMinutes: Number(timerMinutes),
-      oldRoomCode: location.state?.oldRoomCode
+      oldRoomCode: location.state?.oldRoomCode,
+      isRandomWord
     });
   };
 
@@ -48,21 +50,42 @@ export default function CreateGame() {
           />
         </div>
         
-        <div>
-          <label className="block text-sm text-gray-400 mb-2">Secret Word</label>
-          <input 
-            type="text" 
-            className="game-input uppercase" 
-            placeholder="5 letters"
-            value={word} 
-            onChange={e => { setWord(e.target.value.replace(/[^A-Za-z]/g, '')); clearError(); }} 
-            maxLength={5} 
-            minLength={5} 
-            required 
-          />
-          <p className="text-xs text-gray-500 mt-2 mb-4">
-            The word must be a valid English 5-letter word.
-          </p>
+        <div className="space-y-3 border border-gray-700 p-4 rounded-xl bg-wordle-surface">
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-bold text-white">Secret Word</label>
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={isRandomWord}
+                onChange={(e) => { setIsRandomWord(e.target.checked); clearError(); }}
+                className="w-4 h-4 accent-wordle-green cursor-pointer"
+              />
+              <span className="text-sm text-gray-300">Random Word</span>
+            </label>
+          </div>
+          
+          {!isRandomWord && (
+            <>
+              <input 
+                type="text" 
+                className="game-input uppercase" 
+                placeholder="5 letters"
+                value={word} 
+                onChange={e => { setWord(e.target.value.replace(/[^A-Za-z]/g, '')); clearError(); }} 
+                maxLength={5} 
+                minLength={5} 
+                required={!isRandomWord}
+              />
+              <p className="text-xs text-gray-500 mt-2 mb-4">
+                The word must be a valid English 5-letter word.
+              </p>
+            </>
+          )}
+          {isRandomWord && (
+            <div className="p-3 bg-gray-800 rounded text-center text-sm text-gray-400 italic">
+              A random 5-letter word will be chosen. Even you won't know it!
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -103,7 +126,7 @@ export default function CreateGame() {
           <button 
             type="submit" 
             className="btn-primary" 
-            disabled={isLoading || word.length !== 5 || !name.trim()}
+            disabled={isLoading || (!isRandomWord && word.length !== 5) || !name.trim()}
           >
             {isLoading ? 'Creating...' : 'Create'}
           </button>

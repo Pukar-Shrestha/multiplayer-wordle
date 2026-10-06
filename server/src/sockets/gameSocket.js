@@ -1,5 +1,6 @@
 const gameService = require('../services/gameService');
 const roomService = require('../services/roomService');
+const wordService = require('../services/wordService');
 const { sanitizeRoomCode, sanitizeWord, sanitizeName, isValidString } = require('../utils/sanitize');
 const { checkGuessRateLimit } = require('../middleware/rateLimiter');
 const { GAME_STATES, ROLES, ROOM_CODE_REGEX } = require('../config/constants');
@@ -37,18 +38,22 @@ function registerGameSocket(io, socket) {
         return emitError(socket, 'INVALID_PAYLOAD', 'Invalid request payload');
       }
 
-      const { playerName, secretWord, maxGuests, timerMinutes, oldRoomCode } = data;
+      const { playerName, secretWord, maxGuests, timerMinutes, oldRoomCode, isRandomWord } = data;
 
       if (!isValidString(playerName, 20)) {
         return emitError(socket, 'INVALID_NAME', 'Please enter a valid name (max 20 characters)');
       }
-      if (!isValidString(secretWord, 10)) {
+
+      let finalSecretWord = secretWord;
+      if (isRandomWord) {
+        finalSecretWord = wordService.getRandomWord();
+      } else if (!isValidString(secretWord, 10)) {
         return emitError(socket, 'INVALID_WORD', 'Please enter a secret word');
       }
 
       const { room, playerId, roomCode } = await gameService.createGame({
         playerName,
-        secretWord,
+        secretWord: finalSecretWord,
         socketId: socket.id,
         maxGuests: maxGuests || 5,
         timerMinutes: timerMinutes || 5,

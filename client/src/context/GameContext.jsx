@@ -441,14 +441,14 @@ export function GameProvider({ children }) {
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
-  const createGame = useCallback(({ playerName, secretWord, maxGuests, timerMinutes, oldRoomCode }) => {
+  const createGame = useCallback(({ playerName, secretWord, maxGuests, timerMinutes, oldRoomCode, isRandomWord }) => {
     if (!socketRef.current?.connected) {
       dispatch({ type: 'SET_ERROR', payload: 'Not connected to server. Please refresh the page.' });
       return;
     }
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'CLEAR_ERROR' });
-    socketRef.current.emit('createGame', { playerName, secretWord, maxGuests, timerMinutes, oldRoomCode });
+    socketRef.current.emit('createGame', { playerName, secretWord, maxGuests, timerMinutes, oldRoomCode, isRandomWord });
   }, []);
 
   const joinGame = useCallback(({ roomCode, playerName }) => {
