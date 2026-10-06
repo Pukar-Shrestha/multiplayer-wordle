@@ -11,9 +11,9 @@
   --color-surface:#1a1a1b;
   --color-border: #3a3a3c;
   --color-text:   #ffffff;
-  --tile-size:    clamp(44px, 10vw, 62px);
-  --tile-gap:     5px;
-  --key-height:   58px;
+  --tile-size:    min(14vw, 10vh, 62px);
+  --tile-gap:     6px;
+  --key-height:   min(8vh, 58px);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -54,6 +54,7 @@ html, body {
 .tile {
   width: var(--tile-size);
   height: var(--tile-size);
+  aspect-ratio: 1;
   border: 2px solid var(--color-border);
   display: flex;
   align-items: center;

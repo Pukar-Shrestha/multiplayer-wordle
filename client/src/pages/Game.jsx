@@ -12,7 +12,7 @@ export default function Game() {
   const { 
     status, role, hostName, guests, settings, hostGuessView,
     guesses, currentGuess, shakeRow, startedAt,
-    typeLetter, deleteLetter, submitGuess, handleTimeUp 
+    typeLetter, deleteLetter, submitGuess, handleTimeUp, handleStopGame
   } = useGame();
 
   const [timeLeft, setTimeLeft] = useState((settings?.timerMinutes || 5) * 60);
@@ -133,9 +133,15 @@ export default function Game() {
             <p className="mb-2 uppercase tracking-widest text-sm font-bold text-wordle-green">
               You are the host
             </p>
-            <p className="text-sm">
+            <p className="text-sm mb-4">
               Watch the guests race to guess your word!
             </p>
+            <button 
+              onClick={() => handleStopGame()}
+              className="bg-[#2a2a2c] hover:bg-red-900/80 border border-red-900/50 text-red-400 hover:text-red-300 font-bold py-2.5 px-4 rounded-xl transition-colors w-full uppercase tracking-widest text-sm"
+            >
+              Stop Game
+            </button>
           </div>
         ) : (
           <Keyboard />

@@ -474,6 +474,11 @@ export function GameProvider({ children }) {
     socketRef.current.emit('timeUp', { roomCode: roomCodeRef.current });
   }, []);
 
+  const handleStopGame = useCallback(() => {
+    if (!socketRef.current?.connected) return;
+    socketRef.current.emit('stopGame', { roomCode: roomCodeRef.current });
+  }, []);
+
   const submitGuess = useCallback(() => {
     if (!socketRef.current?.connected) return;
     if (state.currentGuess.length !== WORD_LENGTH) {
@@ -528,6 +533,7 @@ export function GameProvider({ children }) {
     joinGame,
     startGame,
     handleTimeUp,
+    handleStopGame,
     submitGuess,
     typeLetter,
     deleteLetter,

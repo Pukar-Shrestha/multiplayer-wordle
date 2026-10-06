@@ -267,6 +267,29 @@ function registerGameSocket(io, socket) {
     }
   });
 
+  socket.on('stopGame', async (data) => {
+    try {
+      const roomCode = sanitizeRoomCode(data?.roomCode);
+      if (!isValidRoomCode(roomCode)) return;
+      
+      const room = roomService.getRoom(roomCode);
+      if (!room || room.status !== GAME_STATES.IN_PROGRESS) return;
+      
+      // Verify host privileges
+      if (room.host.socketId !== socket.id) return;
+      
+      await roomService.updateRoom(roomCode, { status: GAME_STATES.GAME_OVER });
+      io.to(roomCode).emit('gameLost', {
+        secretWord: room.secretWord,
+        status: GAME_STATES.GAME_OVER,
+        reason: 'hostStopped'
+      });
+      console.log(`🛑 Host stopped game in room ${roomCode}. Word was: ${room.secretWord}`);
+    } catch (err) {
+      console.error('stopGame error:', err.message);
+    }
+  });
+
   /* ────────────────────────────────────────────────────────────────────────
    * EVENT: reconnectPlayer
    * Emitted by: Any player returning after a disconnect
