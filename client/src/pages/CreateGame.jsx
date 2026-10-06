@@ -26,23 +26,31 @@ export default function CreateGame() {
     });
   };
 
+  const handleDecreaseGuests = () => setMaxGuests(prev => Math.max(1, prev - 1));
+  const handleIncreaseGuests = () => setMaxGuests(prev => Math.min(5, prev + 1));
+
+  // Determine if the form is valid
+  const isFormValid = !isLoading && (isRandomWord || word.length === 5) && name.trim().length > 0;
+
   return (
-    <div className="page-container pt-12">
-      <h1 className="text-3xl font-bold mb-8">Host a Game</h1>
-      
-      <form className="card space-y-6" onSubmit={handleSubmit}>
+    <div className="page-container justify-center pt-8">
+      <form 
+        className="w-full max-w-lg bg-[#1a1a1b] rounded-2xl p-6 sm:p-8 space-y-6 text-white" 
+        onSubmit={handleSubmit}
+      >
         {error && (
           <div className="p-3 bg-red-900/50 border border-red-500 rounded text-red-200 text-sm font-semibold">
             {error}
           </div>
         )}
         
+        {/* Your name */}
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Your Name</label>
+          <label className="block text-sm font-bold mb-2">Your name</label>
           <input 
             type="text" 
-            className="game-input" 
-            placeholder="e.g. Alex"
+            className="w-full bg-[#121213] border border-[#3a3a3c] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-gray-400 transition-colors"
+            placeholder="Kimbao"
             value={name} 
             onChange={e => { setName(e.target.value); clearError(); }} 
             maxLength={20} 
@@ -50,85 +58,105 @@ export default function CreateGame() {
           />
         </div>
         
-        <div className="space-y-3 border border-gray-700 p-4 rounded-xl bg-wordle-surface">
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-bold text-white">Secret Word</label>
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={isRandomWord}
-                onChange={(e) => { setIsRandomWord(e.target.checked); clearError(); }}
-                className="w-4 h-4 accent-wordle-green cursor-pointer"
-              />
-              <span className="text-sm text-gray-300">Random Word</span>
-            </label>
+        {/* Secret word */}
+        <div>
+          <label className="block text-sm font-bold mb-2">Secret word</label>
+          <div className="flex space-x-3">
+            <input 
+              type="text" 
+              disabled={isRandomWord}
+              className={`flex-1 bg-[#121213] border border-[#3a3a3c] rounded-xl px-4 py-3 text-white uppercase tracking-[0.4em] font-bold focus:outline-none focus:border-gray-400 transition-colors ${isRandomWord ? 'opacity-50 cursor-not-allowed' : ''}`}
+              placeholder="5 LETTERS"
+              value={isRandomWord ? 'RANDOM' : word} 
+              onChange={e => { setWord(e.target.value.replace(/[^A-Za-z]/g, '')); clearError(); }} 
+              maxLength={5} 
+              minLength={5} 
+              required={!isRandomWord}
+            />
+            <button 
+              type="button"
+              onClick={() => { setIsRandomWord(!isRandomWord); clearError(); }}
+              className={`px-6 rounded-xl font-bold border transition-colors ${
+                isRandomWord 
+                  ? 'bg-white text-black border-white' 
+                  : 'bg-[#1a1a1b] text-white border-[#3a3a3c] hover:bg-[#2a2a2c]'
+              }`}
+            >
+              Random
+            </button>
           </div>
-          
-          {!isRandomWord && (
-            <>
-              <input 
-                type="text" 
-                className="game-input uppercase" 
-                placeholder="5 letters"
-                value={word} 
-                onChange={e => { setWord(e.target.value.replace(/[^A-Za-z]/g, '')); clearError(); }} 
-                maxLength={5} 
-                minLength={5} 
-                required={!isRandomWord}
-              />
-              <p className="text-xs text-gray-500 mt-2 mb-4">
-                The word must be a valid English 5-letter word.
-              </p>
-            </>
-          )}
-          {isRandomWord && (
-            <div className="p-3 bg-gray-800 rounded text-center text-sm text-gray-400 italic">
-              A random 5-letter word will be chosen. Even you won't know it!
-            </div>
-          )}
+          <p className="text-sm text-gray-500 mt-2">
+            {isRandomWord ? "A random word will be chosen for you." : "Must be a valid English word."}
+          </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        {/* Guests and Timer Row */}
+        <div className="grid grid-cols-2 gap-6 pt-2">
+          {/* Guests */}
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Max Players</label>
-            <select 
-              className="game-input bg-wordle-dark text-white cursor-pointer"
-              value={maxGuests}
-              onChange={(e) => setMaxGuests(e.target.value)}
-            >
-              {[1, 2, 3, 4, 5].map(num => (
-                <option key={num} value={num}>{num} {num === 1 ? 'Guest' : 'Guests'}</option>
-              ))}
-            </select>
+            <label className="block text-sm font-bold mb-2">Guests</label>
+            <div className="flex items-center justify-between bg-[#121213] border border-[#3a3a3c] rounded-xl p-1.5 h-[52px]">
+              <button 
+                type="button"
+                onClick={handleDecreaseGuests}
+                className="w-10 h-10 flex items-center justify-center bg-[#1a1a1b] hover:bg-[#2a2a2c] rounded-lg text-white transition-colors disabled:opacity-50"
+                disabled={maxGuests <= 1}
+              >
+                −
+              </button>
+              <span className="font-bold text-lg">{maxGuests}</span>
+              <button 
+                type="button"
+                onClick={handleIncreaseGuests}
+                className="w-10 h-10 flex items-center justify-center bg-[#1a1a1b] hover:bg-[#2a2a2c] rounded-lg text-white transition-colors disabled:opacity-50"
+                disabled={maxGuests >= 5}
+              >
+                +
+              </button>
+            </div>
           </div>
+
+          {/* Timer */}
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Timer</label>
-            <select 
-              className="game-input bg-wordle-dark text-white cursor-pointer"
-              value={timerMinutes}
-              onChange={(e) => setTimerMinutes(e.target.value)}
-            >
-              {[1, 2, 3, 4, 5].map(num => (
-                <option key={num} value={num}>{num} {num === 1 ? 'Minute' : 'Minutes'}</option>
+            <label className="block text-sm font-bold mb-2">Timer</label>
+            <div className="flex items-center bg-[#121213] border border-[#3a3a3c] rounded-xl p-1.5 h-[52px]">
+              {[3, 5, 10].map(mins => (
+                <button
+                  key={mins}
+                  type="button"
+                  onClick={() => setTimerMinutes(mins)}
+                  className={`flex-1 h-full flex items-center justify-center rounded-lg text-sm font-bold transition-all ${
+                    timerMinutes === mins 
+                      ? 'bg-white text-black' 
+                      : 'text-gray-400 hover:text-white hover:bg-[#2a2a2c]'
+                  }`}
+                >
+                  {mins} min
+                </button>
               ))}
-            </select>
+            </div>
           </div>
         </div>
         
-        <div className="pt-2 flex gap-4">
+        {/* Bottom Actions */}
+        <div className="flex gap-4 pt-6">
           <button 
             type="button" 
-            className="btn-secondary" 
+            className="flex-shrink-0 px-8 py-4 rounded-xl font-bold bg-[#1a1a1b] border border-[#3a3a3c] text-white hover:bg-[#2a2a2c] transition-colors"
             onClick={() => navigate('/')}
           >
             Back
           </button>
           <button 
             type="submit" 
-            className="btn-primary" 
-            disabled={isLoading || (!isRandomWord && word.length !== 5) || !name.trim()}
+            disabled={!isFormValid}
+            className={`flex-1 py-4 rounded-xl font-bold transition-all ${
+              isFormValid 
+                ? 'bg-wordle-green text-white hover:opacity-90 active:scale-[0.98]' 
+                : 'bg-[#565758] text-[#121213] cursor-not-allowed'
+            }`}
           >
-            {isLoading ? 'Creating...' : 'Create'}
+            {isLoading ? 'Creating...' : 'Create room'}
           </button>
         </div>
       </form>
