@@ -247,6 +247,26 @@ function registerGameSocket(io, socket) {
     }
   });
 
+  socket.on('timeUp', async (data) => {
+    try {
+      const roomCode = sanitizeRoomCode(data?.roomCode);
+      if (!isValidRoomCode(roomCode)) return;
+      
+      const room = roomService.getRoom(roomCode);
+      if (!room || room.status !== GAME_STATES.IN_PROGRESS) return;
+      
+      await roomService.updateRoom(roomCode, { status: GAME_STATES.GAME_OVER });
+      io.to(roomCode).emit('gameLost', {
+        secretWord: room.secretWord,
+        status: GAME_STATES.GAME_OVER,
+        reason: 'timeUp'
+      });
+      console.log(`⏰ Time is up in room ${roomCode}. Word was: ${room.secretWord}`);
+    } catch (err) {
+      console.error('timeUp error:', err.message);
+    }
+  });
+
   /* ────────────────────────────────────────────────────────────────────────
    * EVENT: reconnectPlayer
    * Emitted by: Any player returning after a disconnect

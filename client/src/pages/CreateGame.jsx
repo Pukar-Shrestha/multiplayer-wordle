@@ -91,7 +91,7 @@ export default function CreateGame() {
         </div>
 
         {/* Guests and Timer Row */}
-        <div className="grid grid-cols-2 gap-6 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
           {/* Guests */}
           <div>
             <label className="block text-sm font-bold mb-2">Guests</label>
@@ -139,10 +139,10 @@ export default function CreateGame() {
         </div>
         
         {/* Bottom Actions */}
-        <div className="flex gap-4 pt-6">
+        <div className="flex flex-col sm:flex-row gap-4 pt-6">
           <button 
             type="button" 
-            className="flex-shrink-0 px-8 py-4 rounded-xl font-bold bg-[#1a1a1b] border border-[#3a3a3c] text-white hover:bg-[#2a2a2c] transition-colors"
+            className="w-full sm:w-auto sm:flex-shrink-0 px-8 py-4 rounded-xl font-bold bg-[#1a1a1b] border border-[#3a3a3c] text-white hover:bg-[#2a2a2c] transition-colors order-2 sm:order-1"
             onClick={() => navigate('/')}
           >
             Back
@@ -150,7 +150,7 @@ export default function CreateGame() {
           <button 
             type="submit" 
             disabled={!isFormValid}
-            className={`flex-1 py-4 rounded-xl font-bold transition-all ${
+            className={`w-full sm:flex-1 py-4 rounded-xl font-bold transition-all order-1 sm:order-2 ${
               isFormValid 
                 ? 'bg-wordle-green text-white hover:opacity-90 active:scale-[0.98]' 
                 : 'bg-[#565758] text-[#121213] cursor-not-allowed'

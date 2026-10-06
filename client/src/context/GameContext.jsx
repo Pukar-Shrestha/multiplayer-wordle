@@ -469,6 +469,11 @@ export function GameProvider({ children }) {
     });
   }, []);
 
+  const handleTimeUp = useCallback(() => {
+    if (!socketRef.current?.connected) return;
+    socketRef.current.emit('timeUp', { roomCode: roomCodeRef.current });
+  }, []);
+
   const submitGuess = useCallback(() => {
     if (!socketRef.current?.connected) return;
     if (state.currentGuess.length !== WORD_LENGTH) {
@@ -522,6 +527,7 @@ export function GameProvider({ children }) {
     createGame,
     joinGame,
     startGame,
+    handleTimeUp,
     submitGuess,
     typeLetter,
     deleteLetter,

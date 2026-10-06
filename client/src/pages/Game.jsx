@@ -12,7 +12,7 @@ export default function Game() {
   const { 
     status, role, hostName, guests, settings, hostGuessView,
     guesses, currentGuess, shakeRow, startedAt,
-    typeLetter, deleteLetter, submitGuess 
+    typeLetter, deleteLetter, submitGuess, handleTimeUp 
   } = useGame();
 
   const [timeLeft, setTimeLeft] = useState((settings?.timerMinutes || 5) * 60);
@@ -28,11 +28,15 @@ export default function Game() {
     }
   }, [status, navigate]);
 
+  const isGuest = role === ROLES.GUEST;
+  const isHost = role === ROLES.HOST;
+
   // Timer logic based on server startedAt time
   useEffect(() => {
     if (status !== GAME_STATES.IN_PROGRESS || !startedAt) return;
 
     const totalDurationSeconds = (settings?.timerMinutes || 5) * 60;
+    let hasNotifiedTimeUp = false;
 
     const tick = () => {
       const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
@@ -40,6 +44,10 @@ export default function Game() {
       
       if (remaining <= 0) {
         setTimeLeft(0);
+        if (isHost && !hasNotifiedTimeUp) {
+          hasNotifiedTimeUp = true;
+          handleTimeUp();
+        }
         return false; // return false to stop timer
       }
       setTimeLeft(remaining);
@@ -56,10 +64,7 @@ export default function Game() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [status, startedAt, settings]);
-
-  const isGuest = role === ROLES.GUEST;
-  const isHost = role === ROLES.HOST;
+  }, [status, startedAt, settings, isHost, handleTimeUp]);
 
   // Bind physical keyboard (only active if it's the guest's turn)
   useKeyboard({

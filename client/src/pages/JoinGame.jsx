@@ -46,10 +46,13 @@ export default function JoinGame() {
   };
 
   return (
-    <div className="page-container pt-12">
-      <h1 className="text-3xl font-bold mb-8">Join Game</h1>
-      
-      <form className="card space-y-6" onSubmit={handleSubmit}>
+    <div className="page-container justify-center pt-8">
+      <form 
+        className="w-full max-w-lg bg-[#1a1a1b] rounded-2xl p-6 sm:p-8 space-y-6 text-white" 
+        onSubmit={handleSubmit}
+      >
+        <h1 className="text-3xl font-bold mb-2">Join Game</h1>
+        
         {error && (
           <div className="p-3 bg-red-900/50 border border-red-500 rounded text-red-200 text-sm font-semibold">
             {error}
@@ -57,10 +60,10 @@ export default function JoinGame() {
         )}
         
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Room Code</label>
+          <label className="block text-sm font-bold mb-2">Room Code</label>
           <input 
             type="text" 
-            className="game-input uppercase" 
+            className="w-full bg-[#121213] border border-[#3a3a3c] rounded-xl px-4 py-3 text-white uppercase tracking-[0.2em] font-bold focus:outline-none focus:border-gray-400 transition-colors"
             placeholder="5 chars (e.g. A1B2C)"
             value={code} 
             onChange={e => { setCode(e.target.value.replace(/[^A-Za-z0-9]/g, '')); clearError(); }} 
@@ -71,10 +74,10 @@ export default function JoinGame() {
         </div>
         
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Your Name</label>
+          <label className="block text-sm font-bold mb-2">Your Name</label>
           <input 
             type="text" 
-            className="game-input" 
+            className="w-full bg-[#121213] border border-[#3a3a3c] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-gray-400 transition-colors"
             placeholder="e.g. Sam"
             value={name} 
             onChange={e => { setName(e.target.value); clearError(); }} 
@@ -83,18 +86,22 @@ export default function JoinGame() {
           />
         </div>
         
-        <div className="pt-2 flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4 pt-6">
           <button 
             type="button" 
-            className="btn-secondary" 
+            className="w-full sm:w-auto sm:flex-shrink-0 px-8 py-4 rounded-xl font-bold bg-[#1a1a1b] border border-[#3a3a3c] text-white hover:bg-[#2a2a2c] transition-colors order-2 sm:order-1"
             onClick={() => navigate('/')}
           >
             Back
           </button>
           <button 
             type="submit" 
-            className="btn-primary" 
             disabled={isLoading || isChecking || code.length !== 5 || !name.trim()}
+            className={`w-full sm:flex-1 py-4 rounded-xl font-bold transition-all order-1 sm:order-2 ${
+              !(isLoading || isChecking || code.length !== 5 || !name.trim())
+                ? 'bg-wordle-green text-white hover:opacity-90 active:scale-[0.98]' 
+                : 'bg-[#565758] text-[#121213] cursor-not-allowed'
+            }`}
           >
             {isLoading || isChecking ? 'Joining...' : 'Join'}
           </button>
